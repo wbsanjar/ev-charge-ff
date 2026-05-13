@@ -25,13 +25,15 @@ const AMENITY_ICONS: Record<string, React.ReactNode> = {
 type ReviewWithProfile = Review & { profiles: Profile };
 
 export default function StationDetailPage({ station, onBack, onBook, onAuthClick }: Props) {
-  const { user } = useAuth();
+  const { user, profile } = useAuth();
   const [reviews, setReviews] = useState<ReviewWithProfile[]>([]);
   const [newRating, setNewRating] = useState(5);
   const [newComment, setNewComment] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [reviewsLoading, setReviewsLoading] = useState(true);
   const [avgRating, setAvgRating] = useState(0);
+  const [reviewError, setReviewError] = useState('');
+  const [reviewSuccess, setReviewSuccess] = useState('');
 
   useEffect(() => {
     fetchReviews();
@@ -56,16 +58,38 @@ export default function StationDetailPage({ station, onBack, onBook, onAuthClick
 
   async function submitReview(e: React.FormEvent) {
     e.preventDefault();
+    setReviewError('');
+    setReviewSuccess('');
     if (!user) { onAuthClick(); return; }
     setSubmitting(true);
-    await supabase.from('station_reviews').insert({
+
+    if (!profile) {
+      const { error: pErr } = await supabase.from('profiles').insert({
+        id: user.id,
+        full_name: 'User',
+        role: 'user',
+      });
+      if (pErr && !pErr.message.includes('duplicate')) {
+        setReviewError('Failed to create profile: ' + pErr.message);
+        setSubmitting(false);
+        return;
+      }
+    }
+
+    const { error } = await supabase.from('station_reviews').insert({
       station_id: station.id,
       user_id: user.id,
       rating: newRating,
       comment: newComment,
     });
+    if (error) {
+      setReviewError(error.message);
+      setSubmitting(false);
+      return;
+    }
     setNewComment('');
     setNewRating(5);
+    setReviewSuccess('Review submitted successfully!');
     await fetchReviews();
     setSubmitting(false);
   }
@@ -206,9 +230,15 @@ export default function StationDetailPage({ station, onBack, onBook, onAuthClick
                     className="flex-1 px-3 py-2 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 disabled:bg-gray-100"
                   />
                   <button type="submit" disabled={submitting || !user} className="w-10 h-10 bg-emerald-600 text-white rounded-xl flex items-center justify-center hover:bg-emerald-700 disabled:opacity-50 transition-colors">
-                    <Send className="w-4 h-4" />
+                    {submitting ? <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" /> : <Send className="w-4 h-4" />}
                   </button>
                 </div>
+                {reviewError && (
+                  <p className="mt-2 text-sm text-red-600 bg-red-50 px-3 py-2 rounded-lg">{reviewError}</p>
+                )}
+                {reviewSuccess && (
+                  <p className="mt-2 text-sm text-emerald-600 bg-emerald-50 px-3 py-2 rounded-lg">{reviewSuccess}</p>
+                )}
               </form>
 
               {reviewsLoading ? (

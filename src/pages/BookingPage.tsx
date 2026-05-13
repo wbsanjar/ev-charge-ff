@@ -70,12 +70,10 @@ export default function BookingPage({
 
   function getEndTime(start: string, dur: number) {
     const [hours, minutes] = start.split(':').map(Number);
-
-    const endHour = hours + dur;
-
-    return `${String(endHour).padStart(2, '0')}:${String(
-      minutes
-    ).padStart(2, '0')}`;
+    const totalMinutes = hours * 60 + minutes + dur * 60;
+    const endHour = Math.floor(totalMinutes / 60) % 24;
+    const endMin = totalMinutes % 60;
+    return `${String(endHour).padStart(2, '0')}:${String(endMin).padStart(2, '0')}`;
   }
 
   const totalAmount = selectedStation

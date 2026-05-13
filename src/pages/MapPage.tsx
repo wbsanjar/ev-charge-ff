@@ -9,6 +9,7 @@ type Props = {
 
 const CITIES = ['All Cities', 'New Delhi', 'Mumbai', 'Bangalore', 'Chennai', 'Noida', 'Hyderabad', 'Kolkata', 'Pune'];
 const CHARGER_TYPES = ['All Types', 'CCS2', 'Type 2', 'CHAdeMO', 'GB/T'];
+const RATING_OPTIONS = ['All Ratings', '5', '4+', '3+', '2+', '1+'];
 
 export default function MapPage({ onStationSelect, initialStation }: Props) {
   const mapRef = useRef<HTMLDivElement>(null);
@@ -22,15 +23,34 @@ export default function MapPage({ onStationSelect, initialStation }: Props) {
   const [selectedCity, setSelectedCity] = useState('All Cities');
   const [selectedCharger, setSelectedCharger] = useState('All Types');
   const [fastOnly, setFastOnly] = useState(false);
+  const [selectedRating, setSelectedRating] = useState('All Ratings');
+  const [stationRatings, setStationRatings] = useState<Record<string, number>>({});
   const [showFilters, setShowFilters] = useState(false);
   const [mapLoaded, setMapLoaded] = useState(false);
   const [stationsLoading, setStationsLoading] = useState(true);
 
   useEffect(() => {
-    supabase.from('stations').select('*').then(({ data }) => {
-      if (data) { setStations(data); setFiltered(data); }
+    (async () => {
+      const [sRes, rRes] = await Promise.all([
+        supabase.from('stations').select('*'),
+        supabase.from('station_reviews').select('station_id, rating'),
+      ]);
+      if (sRes.data) { setStations(sRes.data); setFiltered(sRes.data); }
+      if (rRes.data) {
+        const agg: Record<string, { sum: number; count: number }> = {};
+        rRes.data.forEach(r => {
+          if (!agg[r.station_id]) agg[r.station_id] = { sum: 0, count: 0 };
+          agg[r.station_id].sum += r.rating;
+          agg[r.station_id].count += 1;
+        });
+        const ratings: Record<string, number> = {};
+        for (const [id, v] of Object.entries(agg)) {
+          ratings[id] = Math.round((v.sum / v.count) * 10) / 10;
+        }
+        setStationRatings(ratings);
+      }
       setStationsLoading(false);
-    });
+    })();
   }, []);
 
   useEffect(() => {
@@ -42,8 +62,12 @@ export default function MapPage({ onStationSelect, initialStation }: Props) {
     if (selectedCity !== 'All Cities') result = result.filter(s => s.city === selectedCity);
     if (selectedCharger !== 'All Types') result = result.filter(s => s.charger_types.includes(selectedCharger));
     if (fastOnly) result = result.filter(s => s.has_fast_charging);
+    if (selectedRating !== 'All Ratings') {
+      const minRating = parseInt(selectedRating);
+      result = result.filter(s => (stationRatings[s.id] || 0) >= minRating);
+    }
     setFiltered(result);
-  }, [searchQuery, selectedCity, selectedCharger, fastOnly, stations]);
+  }, [searchQuery, selectedCity, selectedCharger, fastOnly, selectedRating, stationRatings, stations]);
 
   useEffect(() => {
     if (!mapRef.current || mapLoaded) return;
@@ -143,13 +167,31 @@ export default function MapPage({ onStationSelect, initialStation }: Props) {
           </div>
 
           {showFilters && (
-            <div className="mt-3 grid grid-cols-2 gap-2">
-              <select value={selectedCity} onChange={e => setSelectedCity(e.target.value)} className="px-3 py-2 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500">
-                {CITIES.map(c => <option key={c}>{c}</option>)}
-              </select>
-              <select value={selectedCharger} onChange={e => setSelectedCharger(e.target.value)} className="px-3 py-2 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500">
-                {CHARGER_TYPES.map(c => <option key={c}>{c}</option>)}
-              </select>
+            <div className="mt-3 space-y-2">
+              <div className="grid grid-cols-2 gap-2">
+                <select value={selectedCity} onChange={e => setSelectedCity(e.target.value)} className="px-3 py-2 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500">
+                  {CITIES.map(c => <option key={c}>{c}</option>)}
+                </select>
+                <select value={selectedCharger} onChange={e => setSelectedCharger(e.target.value)} className="px-3 py-2 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500">
+                  {CHARGER_TYPES.map(c => <option key={c}>{c}</option>)}
+                </select>
+              </div>
+              <div className="flex gap-1.5">
+                {RATING_OPTIONS.map(r => (
+                  <button
+                    key={r}
+                    onClick={() => setSelectedRating(r)}
+                    className={`flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium border transition-colors ${
+                      selectedRating === r
+                        ? 'bg-amber-50 border-amber-300 text-amber-700'
+                        : 'border-gray-200 text-gray-500 hover:border-gray-300'
+                    }`}
+                  >
+                    <Star className={`w-3 h-3 ${selectedRating === r ? 'fill-amber-400' : ''}`} />
+                    {r}
+                  </button>
+                ))}
+              </div>
             </div>
           )}
         </div>
@@ -201,6 +243,11 @@ export default function MapPage({ onStationSelect, initialStation }: Props) {
                       <span className={`text-xs font-medium ${station.available_slots > 0 ? 'text-emerald-600' : 'text-red-600'}`}>
                         {station.available_slots}/{station.total_slots} slots
                       </span>
+                      {stationRatings[station.id] && (
+                        <span className="flex items-center gap-0.5 text-xs text-amber-600 font-medium">
+                          <Star className="w-3 h-3 fill-amber-400" /> {stationRatings[station.id]}
+                        </span>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -243,7 +290,7 @@ export default function MapPage({ onStationSelect, initialStation }: Props) {
               </div>
               <div className="bg-gray-50 rounded-xl p-2 text-center">
                 <div className="text-amber-500 font-bold text-sm flex items-center justify-center gap-0.5">
-                  <Star className="w-3 h-3 fill-amber-400" /> 4.5
+                  <Star className="w-3 h-3 fill-amber-400" /> {stationRatings[selectedStation.id] || '-'}
                 </div>
                 <div className="text-gray-400 text-xs mt-0.5">rating</div>
               </div>
