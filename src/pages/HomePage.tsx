@@ -45,15 +45,17 @@ const FEATURES = [
   },
 ];
 
-export default function HomePage({ onNavigate, onEmergency, onAuthClick, onStationSelect }: Props) {
+export default function HomePage({ onNavigate, onEmergency, onStationSelect }: Props) {
   const [searchQuery, setSearchQuery] = useState('');
   const [stations, setStations] = useState<Station[]>([]);
   const [filteredStations, setFilteredStations] = useState<Station[]>([]);
   const [showSuggestions, setShowSuggestions] = useState(false);
+  const [stationsLoading, setStationsLoading] = useState(true);
 
   useEffect(() => {
     supabase.from('stations').select('*').order('name').then(({ data }) => {
       if (data) setStations(data);
+      setStationsLoading(false);
     });
   }, []);
 
@@ -231,7 +233,21 @@ export default function HomePage({ onNavigate, onEmergency, onAuthClick, onStati
             </button>
           </div>
           <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-6">
-            {stations.slice(0, 6).map(station => (
+            {stationsLoading ? (
+              Array.from({ length: 6 }).map((_, i) => (
+                <div key={i} className="bg-white rounded-2xl overflow-hidden shadow-sm border border-gray-100 animate-pulse">
+                  <div className="h-40 bg-gray-200" />
+                  <div className="p-4 space-y-3">
+                    <div className="h-4 w-3/4 bg-gray-200 rounded" />
+                    <div className="h-3 w-1/2 bg-gray-200 rounded" />
+                    <div className="flex justify-between">
+                      <div className="h-4 w-20 bg-gray-200 rounded" />
+                      <div className="h-5 w-16 bg-gray-200 rounded-full" />
+                    </div>
+                  </div>
+                </div>
+              ))
+            ) : stations.slice(0, 6).map(station => (
               <StationCard key={station.id} station={station} onClick={() => onStationSelect(station)} />
             ))}
           </div>

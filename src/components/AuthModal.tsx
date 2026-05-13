@@ -1,43 +1,24 @@
-import { useState } from 'react';
-import { X, Mail, Lock, User, Eye, EyeOff, Zap } from 'lucide-react';
-import { useAuth } from '../context/AuthContext';
+import { useState, useEffect } from 'react';
+import { SignIn, SignUp, useUser } from '@clerk/clerk-react';
+import { X, Zap } from 'lucide-react';
 
 type Props = {
   onClose: () => void;
 };
 
 export default function AuthModal({ onClose }: Props) {
-  const [mode, setMode] = useState<'login' | 'signup'>('login');
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [name, setName] = useState('');
-  const [showPassword, setShowPassword] = useState(false);
-  const [error, setError] = useState('');
-  const [loading, setLoading] = useState(false);
+  const [mode, setMode] = useState<'sign-in' | 'sign-up'>('sign-in');
+  const { isSignedIn } = useUser();
 
-  const { signIn, signUp } = useAuth();
+  useEffect(() => {
+    if (isSignedIn) onClose();
+  }, [isSignedIn, onClose]);
 
-  async function handleSubmit(e: React.FormEvent) {
-    e.preventDefault();
-    setError('');
-    setLoading(true);
-
-    if (mode === 'login') {
-      const { error } = await signIn(email, password);
-      if (error) setError(error.message);
-      else onClose();
-    } else {
-      if (!name.trim()) { setError('Please enter your name'); setLoading(false); return; }
-      const { error } = await signUp(email, password, name);
-      if (error) setError(error.message);
-      else onClose();
-    }
-    setLoading(false);
-  }
+  if (isSignedIn) return null;
 
   return (
     <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden relative">
         <div className="bg-gradient-to-br from-emerald-500 to-teal-600 p-6 text-white">
           <div className="flex items-center justify-between mb-4">
             <div className="flex items-center gap-2">
@@ -50,81 +31,97 @@ export default function AuthModal({ onClose }: Props) {
               <X className="w-4 h-4" />
             </button>
           </div>
-          <h2 className="text-2xl font-bold">{mode === 'login' ? 'Welcome Back' : 'Join ChargeEV'}</h2>
+          <h2 className="text-2xl font-bold">
+            {mode === 'sign-in' ? 'Welcome Back' : 'Join ChargeEV'}
+          </h2>
           <p className="text-emerald-100 text-sm mt-1">
-            {mode === 'login' ? 'Sign in to your account' : 'Create your free account'}
+            {mode === 'sign-in' ? 'Sign in to your account' : 'Create your free account'}
           </p>
         </div>
 
         <div className="p-6">
           <div className="flex bg-gray-100 rounded-xl p-1 mb-6">
             <button
-              onClick={() => { setMode('login'); setError(''); }}
-              className={`flex-1 py-2 rounded-lg text-sm font-medium transition-all ${mode === 'login' ? 'bg-white shadow text-gray-900' : 'text-gray-500 hover:text-gray-700'}`}
+              onClick={() => setMode('sign-in')}
+              className={`flex-1 py-2 rounded-lg text-sm font-medium transition-all ${mode === 'sign-in' ? 'bg-white shadow text-gray-900' : 'text-gray-500 hover:text-gray-700'}`}
             >
               Sign In
             </button>
             <button
-              onClick={() => { setMode('signup'); setError(''); }}
-              className={`flex-1 py-2 rounded-lg text-sm font-medium transition-all ${mode === 'signup' ? 'bg-white shadow text-gray-900' : 'text-gray-500 hover:text-gray-700'}`}
+              onClick={() => setMode('sign-up')}
+              className={`flex-1 py-2 rounded-lg text-sm font-medium transition-all ${mode === 'sign-up' ? 'bg-white shadow text-gray-900' : 'text-gray-500 hover:text-gray-700'}`}
             >
               Sign Up
             </button>
           </div>
 
-          <form onSubmit={handleSubmit} className="space-y-4">
-            {mode === 'signup' && (
-              <div className="relative">
-                <User className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-                <input
-                  type="text"
-                  placeholder="Full Name"
-                  value={name}
-                  onChange={e => setName(e.target.value)}
-                  className="w-full pl-10 pr-4 py-3 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent text-sm"
-                />
-              </div>
-            )}
-            <div className="relative">
-              <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-              <input
-                type="email"
-                placeholder="Email Address"
-                value={email}
-                onChange={e => setEmail(e.target.value)}
-                required
-                className="w-full pl-10 pr-4 py-3 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent text-sm"
-              />
-            </div>
-            <div className="relative">
-              <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-              <input
-                type={showPassword ? 'text' : 'password'}
-                placeholder="Password"
-                value={password}
-                onChange={e => setPassword(e.target.value)}
-                required
-                className="w-full pl-10 pr-12 py-3 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent text-sm"
-              />
-              <button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600">
-                {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-              </button>
-            </div>
+          {mode === 'sign-in' ? (
+            <SignIn
+              appearance={{
+                elements: {
+                  rootBox: 'w-full',
+                  card: 'shadow-none border-0 p-0',
+                  header: 'hidden',
+                  headerTitle: 'hidden',
+                  headerSubtitle: 'hidden',
+                  socialButtonsBlockButton: 'border-gray-200 hover:bg-gray-50 text-gray-700 font-medium',
+                  dividerLine: 'bg-gray-200',
+                  dividerText: 'text-gray-400',
+                  formFieldLabel: 'text-sm font-medium text-gray-700',
+                  formFieldInput: 'w-full px-4 py-3 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent',
+                  formButtonPrimary: 'w-full bg-gradient-to-r from-emerald-500 to-teal-600 text-white py-3 rounded-xl font-semibold hover:from-emerald-600 hover:to-teal-700 transition-all',
+                  footerActionLink: 'text-emerald-600 font-semibold hover:underline',
+                  footer: 'hidden',
+                  phoneNumberField: 'hidden',
+                  formFieldRow__phoneNumber: 'hidden',
+                },
+              }}
+              signUpUrl="#"
+              afterSignInUrl={window.location.href}
+            />
+          ) : (
+            <SignUp
+              appearance={{
+                elements: {
+                  rootBox: 'w-full',
+                  card: 'shadow-none border-0 p-0',
+                  header: 'hidden',
+                  headerTitle: 'hidden',
+                  headerSubtitle: 'hidden',
+                  socialButtonsBlockButton: 'border-gray-200 hover:bg-gray-50 text-gray-700 font-medium',
+                  dividerLine: 'bg-gray-200',
+                  dividerText: 'text-gray-400',
+                  formFieldLabel: 'text-sm font-medium text-gray-700',
+                  formFieldInput: 'w-full px-4 py-3 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent',
+                  formButtonPrimary: 'w-full bg-gradient-to-r from-emerald-500 to-teal-600 text-white py-3 rounded-xl font-semibold hover:from-emerald-600 hover:to-teal-700 transition-all',
+                  footerActionLink: 'text-emerald-600 font-semibold hover:underline',
+                  footer: 'hidden',
+                  phoneNumberField: 'hidden',
+                  formFieldRow__phoneNumber: 'hidden',
+                },
+              }}
+              signInUrl="#"
+              afterSignUpUrl={window.location.href}
+            />
+          )}
 
-            {error && (
-              <div className="bg-red-50 border border-red-200 text-red-600 text-sm px-4 py-3 rounded-xl">
-                {error}
-              </div>
+          <div className="mt-4 text-center border-t border-gray-100 pt-4">
+            {mode === 'sign-in' ? (
+              <p className="text-sm text-gray-500">
+                Don't have an account?{' '}
+                <button onClick={() => setMode('sign-up')} className="text-emerald-600 font-semibold hover:underline">
+                  Sign Up
+                </button>
+              </p>
+            ) : (
+              <p className="text-sm text-gray-500">
+                Already have an account?{' '}
+                <button onClick={() => setMode('sign-in')} className="text-emerald-600 font-semibold hover:underline">
+                  Sign In
+                </button>
+              </p>
             )}
-
-            <button
-              type="submit"
-              disabled={loading}
-              className="w-full bg-gradient-to-r from-emerald-500 to-teal-600 text-white py-3 rounded-xl font-semibold hover:from-emerald-600 hover:to-teal-700 transition-all disabled:opacity-60 disabled:cursor-not-allowed"
-            >
-              {loading ? 'Please wait...' : mode === 'login' ? 'Sign In' : 'Create Account'}
-            </button>
-          </form>
+          </div>
         </div>
       </div>
     </div>

@@ -1,8 +1,8 @@
 import { useState, useEffect } from 'react';
-import { Zap, Menu, X, User, LogOut, LayoutDashboard, Shield } from 'lucide-react';
+import { Zap, Menu, X, User, LogOut, LayoutDashboard, Shield, Building2 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 
-type Page = 'home' | 'map' | 'booking' | 'dashboard' | 'admin';
+type Page = 'home' | 'map' | 'booking' | 'dashboard' | 'admin' | 'manager';
 
 type Props = {
   currentPage: Page;
@@ -14,7 +14,7 @@ export default function Navbar({ currentPage, onNavigate, onAuthClick }: Props) 
   const [scrolled, setScrolled] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [dropdownOpen, setDropdownOpen] = useState(false);
-  const { user, profile, signOut } = useAuth();
+  const { user, profile, loading: authLoading, signOut } = useAuth();
 
   useEffect(() => {
     const handler = () => setScrolled(window.scrollY > 20);
@@ -63,7 +63,12 @@ export default function Navbar({ currentPage, onNavigate, onAuthClick }: Props) 
 
           {/* Auth / User */}
           <div className="hidden md:flex items-center gap-3">
-            {user ? (
+            {authLoading ? (
+              <div className="flex items-center gap-3 animate-pulse">
+                <div className="w-8 h-8 bg-gray-200 rounded-full" />
+                <div className="h-4 w-20 bg-gray-200 rounded" />
+              </div>
+            ) : user ? (
               <div className="relative">
                 <button
                   onClick={() => setDropdownOpen(!dropdownOpen)}
@@ -83,6 +88,11 @@ export default function Navbar({ currentPage, onNavigate, onAuthClick }: Props) 
                     <button onClick={() => { onNavigate('dashboard'); setDropdownOpen(false); }} className="flex items-center gap-3 w-full px-4 py-3 text-sm text-gray-700 hover:bg-gray-50">
                       <LayoutDashboard className="w-4 h-4 text-emerald-500" /> My Dashboard
                     </button>
+                    {(profile?.role === 'manager' || profile?.role === 'admin') && (
+                      <button onClick={() => { onNavigate('manager'); setDropdownOpen(false); }} className="flex items-center gap-3 w-full px-4 py-3 text-sm text-gray-700 hover:bg-gray-50">
+                        <Building2 className="w-4 h-4 text-emerald-500" /> Manager Dashboard
+                      </button>
+                    )}
                     {profile?.role === 'admin' && (
                       <button onClick={() => { onNavigate('admin'); setDropdownOpen(false); }} className="flex items-center gap-3 w-full px-4 py-3 text-sm text-gray-700 hover:bg-gray-50">
                         <Shield className="w-4 h-4 text-emerald-500" /> Admin Panel
@@ -139,12 +149,22 @@ export default function Navbar({ currentPage, onNavigate, onAuthClick }: Props) 
                 <button onClick={() => { onNavigate('dashboard'); setMenuOpen(false); }} className="flex items-center gap-2 w-full px-5 py-3 text-sm text-gray-700 hover:bg-gray-50">
                   <User className="w-4 h-4" /> Dashboard
                 </button>
+                {(profile?.role === 'manager' || profile?.role === 'admin') && (
+                  <button onClick={() => { onNavigate('manager'); setMenuOpen(false); }} className="flex items-center gap-2 w-full px-5 py-3 text-sm text-gray-700 hover:bg-gray-50">
+                    <Building2 className="w-4 h-4" /> Manager Dashboard
+                  </button>
+                )}
+                {profile?.role === 'admin' && (
+                  <button onClick={() => { onNavigate('admin'); setMenuOpen(false); }} className="flex items-center gap-2 w-full px-5 py-3 text-sm text-gray-700 hover:bg-gray-50">
+                    <Shield className="w-4 h-4" /> Admin Panel
+                  </button>
+                )}
                 <button onClick={() => { signOut(); setMenuOpen(false); }} className="flex items-center gap-2 w-full px-5 py-3 text-sm text-red-600 hover:bg-red-50">
                   <LogOut className="w-4 h-4" /> Sign Out
                 </button>
               </>
             ) : (
-              <button onClick={() => { onAuthClick(); setMenuOpen(false); }} className="w-full mx-4 my-3 px-4 py-2.5 bg-gradient-to-r from-emerald-500 to-teal-600 text-white rounded-xl text-sm font-medium">
+              <button onClick={() => { onAuthClick(); setMenuOpen(false); }} className="w-full mx-4 mt-3 px-4 py-2.5 bg-gradient-to-r from-emerald-500 to-teal-600 text-white rounded-xl text-sm font-medium">
                 Sign In / Sign Up
               </button>
             )}

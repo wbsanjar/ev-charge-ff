@@ -30,6 +30,7 @@ export default function StationDetailPage({ station, onBack, onBook, onAuthClick
   const [newRating, setNewRating] = useState(5);
   const [newComment, setNewComment] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const [reviewsLoading, setReviewsLoading] = useState(true);
   const [avgRating, setAvgRating] = useState(0);
 
   useEffect(() => {
@@ -38,6 +39,7 @@ export default function StationDetailPage({ station, onBack, onBook, onAuthClick
   }, [station.id]);
 
   async function fetchReviews() {
+    setReviewsLoading(true);
     const { data } = await supabase
       .from('station_reviews')
       .select('*, profiles(full_name, avatar_url)')
@@ -49,6 +51,7 @@ export default function StationDetailPage({ station, onBack, onBook, onAuthClick
         setAvgRating(data.reduce((s, r) => s + r.rating, 0) / data.length);
       }
     }
+    setReviewsLoading(false);
   }
 
   async function submitReview(e: React.FormEvent) {
@@ -208,7 +211,23 @@ export default function StationDetailPage({ station, onBack, onBook, onAuthClick
                 </div>
               </form>
 
-              {reviews.length === 0 ? (
+              {reviewsLoading ? (
+                <div className="space-y-4 animate-pulse">
+                  {[1, 2, 3].map(i => (
+                    <div key={i} className="flex gap-3">
+                      <div className="w-9 h-9 bg-gray-200 rounded-full flex-shrink-0" />
+                      <div className="flex-1 space-y-2">
+                        <div className="flex items-center gap-2">
+                          <div className="h-4 w-24 bg-gray-200 rounded" />
+                          <div className="h-3 w-16 bg-gray-200 rounded" />
+                        </div>
+                        <div className="h-3 w-full bg-gray-200 rounded" />
+                        <div className="h-3 w-3/4 bg-gray-200 rounded" />
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : reviews.length === 0 ? (
                 <p className="text-gray-400 text-sm text-center py-4">No reviews yet. Be the first!</p>
               ) : (
                 <div className="space-y-4">

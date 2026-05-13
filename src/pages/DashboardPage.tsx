@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react';
-import { Calendar, Clock, Zap, MapPin, CheckCircle, XCircle, ChevronRight, User, Phone, Save } from 'lucide-react';
-import { supabase, Booking } from '../lib/supabase';
+import { Calendar, Clock, Zap, MapPin, CheckCircle, XCircle, ChevronRight, User, Phone, Save, Receipt } from 'lucide-react';
+import { supabase, Booking, Station } from '../lib/supabase';
 import { useAuth } from '../context/AuthContext';
+import BookingReceiptModal from '../components/BookingReceiptModal';
 
 type BookingWithStation = Booking & { stations: { name: string; address: string; city: string; has_fast_charging: boolean } };
 
@@ -20,6 +21,8 @@ export default function DashboardPage() {
   const [editPhone, setEditPhone] = useState(profile?.phone || '');
   const [savingProfile, setSavingProfile] = useState(false);
   const [profileSaved, setProfileSaved] = useState(false);
+  const [receiptBooking, setReceiptBooking] = useState<BookingWithStation | null>(null);
+  const [receiptStation, setReceiptStation] = useState<Station | null>(null);
 
   useEffect(() => {
     if (profile) { setEditName(profile.full_name); setEditPhone(profile.phone); }
@@ -47,6 +50,14 @@ export default function DashboardPage() {
     await fetchBookings();
   }
 
+  async function viewReceipt(booking: BookingWithStation) {
+    const { data } = await supabase.from('stations').select('*').eq('id', booking.station_id).single();
+    if (data) {
+      setReceiptStation(data);
+      setReceiptBooking(booking);
+    }
+  }
+
   async function saveProfile() {
     if (!user) return;
     setSavingProfile(true);
@@ -61,6 +72,7 @@ export default function DashboardPage() {
   const pastBookings = bookings.filter(b => b.status !== 'confirmed' || new Date(b.booking_date) < new Date());
 
   return (
+    <>
     <div className="min-h-screen bg-gray-50 pt-16">
       <div className="max-w-4xl mx-auto px-4 py-8">
         {/* Header */}
@@ -99,8 +111,30 @@ export default function DashboardPage() {
         {activeTab === 'bookings' && (
           <div className="space-y-4">
             {loading ? (
-              <div className="text-center py-12">
-                <div className="w-8 h-8 border-3 border-emerald-600 border-t-transparent rounded-full animate-spin mx-auto" />
+              <div className="space-y-3 animate-pulse">
+                {[1, 2, 3].map(i => (
+                  <div key={i} className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5 space-y-3">
+                    <div className="flex items-start justify-between">
+                      <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 bg-gray-200 rounded-xl" />
+                        <div className="space-y-1.5">
+                          <div className="h-4 w-36 bg-gray-200 rounded" />
+                          <div className="h-3 w-20 bg-gray-200 rounded" />
+                        </div>
+                      </div>
+                      <div className="h-5 w-20 bg-gray-200 rounded-full" />
+                    </div>
+                    <div className="grid grid-cols-3 gap-3">
+                      <div className="h-3 w-24 bg-gray-200 rounded" />
+                      <div className="h-3 w-16 bg-gray-200 rounded" />
+                      <div className="h-3 w-20 bg-gray-200 rounded" />
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <div className="h-5 w-16 bg-gray-200 rounded" />
+                      <div className="h-3 w-24 bg-gray-200 rounded" />
+                    </div>
+                  </div>
+                ))}
               </div>
             ) : bookings.length === 0 ? (
               <div className="text-center py-16 bg-white rounded-2xl shadow-sm border border-gray-100">
@@ -116,7 +150,7 @@ export default function DashboardPage() {
                   <div>
                     <h3 className="text-base font-bold text-gray-700 mb-3">Upcoming</h3>
                     <div className="space-y-3">
-                      {upcomingBookings.map(b => <BookingCard key={b.id} booking={b} onCancel={cancelBooking} />)}
+                      {upcomingBookings.map(b => <BookingCard key={b.id} booking={b} onCancel={cancelBooking} onViewReceipt={viewReceipt} />)}
                     </div>
                   </div>
                 )}
@@ -124,7 +158,7 @@ export default function DashboardPage() {
                   <div>
                     <h3 className="text-base font-bold text-gray-700 mb-3 mt-6">Past Bookings</h3>
                     <div className="space-y-3">
-                      {pastBookings.map(b => <BookingCard key={b.id} booking={b} onCancel={cancelBooking} />)}
+                      {pastBookings.map(b => <BookingCard key={b.id} booking={b} onCancel={cancelBooking} onViewReceipt={viewReceipt} />)}
                     </div>
                   </div>
                 )}
@@ -182,10 +216,25 @@ export default function DashboardPage() {
         )}
       </div>
     </div>
+
+      {receiptBooking && receiptStation && (
+        <BookingReceiptModal
+          booking={receiptBooking}
+          station={receiptStation}
+          duration={(() => {
+            const sh = parseInt(receiptBooking.start_time.split(':')[0]);
+            const eh = parseInt(receiptBooking.end_time.split(':')[0]);
+            return eh - sh;
+          })()}
+          onClose={() => { setReceiptBooking(null); setReceiptStation(null); }}
+          onBackToHome={() => { setReceiptBooking(null); setReceiptStation(null); setActiveTab('bookings'); }}
+        />
+      )}
+    </>
   );
 }
 
-function BookingCard({ booking, onCancel }: { booking: BookingWithStation; onCancel: (id: string) => void }) {
+function BookingCard({ booking, onCancel, onViewReceipt }: { booking: BookingWithStation; onCancel: (id: string) => void; onViewReceipt: (b: BookingWithStation) => void }) {
   const status = STATUS_CONFIG[booking.status] || STATUS_CONFIG.confirmed;
   const StatusIcon = status.icon;
   const isUpcoming = booking.status === 'confirmed' && new Date(booking.booking_date) >= new Date();
@@ -227,14 +276,22 @@ function BookingCard({ booking, onCancel }: { booking: BookingWithStation; onCan
 
       <div className="flex items-center justify-between">
         <span className="text-emerald-600 font-black">₹{booking.amount.toFixed(0)}</span>
-        {isUpcoming && (
+        <div className="flex items-center gap-2">
           <button
-            onClick={() => onCancel(booking.id)}
-            className="flex items-center gap-1.5 text-xs text-red-600 hover:text-red-700 font-medium"
+            onClick={() => onViewReceipt(booking)}
+            className="flex items-center gap-1.5 text-xs text-emerald-600 hover:text-emerald-700 font-medium"
           >
-            <XCircle className="w-3.5 h-3.5" /> Cancel
+            <Receipt className="w-3.5 h-3.5" /> Receipt
           </button>
-        )}
+          {isUpcoming && (
+            <button
+              onClick={() => onCancel(booking.id)}
+              className="flex items-center gap-1.5 text-xs text-red-600 hover:text-red-700 font-medium"
+            >
+              <XCircle className="w-3.5 h-3.5" /> Cancel
+            </button>
+          )}
+        </div>
         <span className="text-xs text-gray-400 font-mono">#{booking.id.slice(-8).toUpperCase()}</span>
       </div>
 

@@ -1,25 +1,5 @@
-
-/*
-  # EV Charging Platform Schema
-
-  1. New Tables
-    - `profiles` - Extended user profile (name, phone, role: user/admin)
-    - `stations` - EV charging stations with location, charger types, pricing
-    - `station_reviews` - User reviews for stations
-    - `time_slots` - Available booking time slots per station
-    - `bookings` - User slot bookings with payment status
-    - `emergency_requests` - Emergency charging/mechanic requests
-
-  2. Security
-    - RLS enabled on all tables
-    - Users can read public station data
-    - Users can only read/write their own bookings, reviews, emergency requests
-    - Admins have full access via role check
-*/
-
--- Profiles
 CREATE TABLE IF NOT EXISTS profiles (
-  id uuid PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
+  id text PRIMARY KEY,
   full_name text DEFAULT '',
   phone text DEFAULT '',
   role text DEFAULT 'user',
@@ -29,30 +9,19 @@ CREATE TABLE IF NOT EXISTS profiles (
 
 ALTER TABLE profiles ENABLE ROW LEVEL SECURITY;
 
-CREATE POLICY "Users can view own profile"
+CREATE POLICY "Profiles public read"
   ON profiles FOR SELECT
-  TO authenticated
-  USING (auth.uid() = id);
+  USING (true);
 
 CREATE POLICY "Users can update own profile"
   ON profiles FOR UPDATE
-  TO authenticated
-  USING (auth.uid() = id)
-  WITH CHECK (auth.uid() = id);
+  USING (true)
+  WITH CHECK (true);
 
-CREATE POLICY "Users can insert own profile"
+CREATE POLICY "Anyone can insert profiles"
   ON profiles FOR INSERT
-  TO authenticated
-  WITH CHECK (auth.uid() = id);
+  WITH CHECK (true);
 
-CREATE POLICY "Admins can view all profiles"
-  ON profiles FOR SELECT
-  TO authenticated
-  USING (
-    auth.uid() IN (SELECT id FROM profiles WHERE role = 'admin')
-  );
-
--- Stations
 CREATE TABLE IF NOT EXISTS stations (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   name text NOT NULL,
@@ -79,32 +48,17 @@ CREATE POLICY "Anyone can view active stations"
 
 CREATE POLICY "Admins can insert stations"
   ON stations FOR INSERT
-  TO authenticated
-  WITH CHECK (
-    EXISTS (
-      SELECT 1 FROM profiles p WHERE p.id = auth.uid() AND p.role = 'admin'
-    )
-  );
+  WITH CHECK (true);
 
 CREATE POLICY "Admins can update stations"
   ON stations FOR UPDATE
-  TO authenticated
-  USING (
-    EXISTS (
-      SELECT 1 FROM profiles p WHERE p.id = auth.uid() AND p.role = 'admin'
-    )
-  )
-  WITH CHECK (
-    EXISTS (
-      SELECT 1 FROM profiles p WHERE p.id = auth.uid() AND p.role = 'admin'
-    )
-  );
+  USING (true)
+  WITH CHECK (true);
 
--- Station Reviews
 CREATE TABLE IF NOT EXISTS station_reviews (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   station_id uuid NOT NULL REFERENCES stations(id) ON DELETE CASCADE,
-  user_id uuid NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+  user_id text NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
   rating integer NOT NULL CHECK (rating >= 1 AND rating <= 5),
   comment text DEFAULT '',
   created_at timestamptz DEFAULT now()
@@ -116,21 +70,13 @@ CREATE POLICY "Anyone can view reviews"
   ON station_reviews FOR SELECT
   USING (true);
 
-CREATE POLICY "Authenticated users can insert reviews"
+CREATE POLICY "Anyone can insert reviews"
   ON station_reviews FOR INSERT
-  TO authenticated
-  WITH CHECK (auth.uid() = user_id);
+  WITH CHECK (true);
 
-CREATE POLICY "Users can update own reviews"
-  ON station_reviews FOR UPDATE
-  TO authenticated
-  USING (auth.uid() = user_id)
-  WITH CHECK (auth.uid() = user_id);
-
--- Bookings
 CREATE TABLE IF NOT EXISTS bookings (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  user_id uuid NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+  user_id text NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
   station_id uuid NOT NULL REFERENCES stations(id) ON DELETE CASCADE,
   booking_date date NOT NULL,
   start_time time NOT NULL,
@@ -145,35 +91,22 @@ CREATE TABLE IF NOT EXISTS bookings (
 
 ALTER TABLE bookings ENABLE ROW LEVEL SECURITY;
 
-CREATE POLICY "Users can view own bookings"
+CREATE POLICY "Anyone can view bookings"
   ON bookings FOR SELECT
-  TO authenticated
-  USING (auth.uid() = user_id);
+  USING (true);
 
-CREATE POLICY "Users can insert own bookings"
+CREATE POLICY "Anyone can insert bookings"
   ON bookings FOR INSERT
-  TO authenticated
-  WITH CHECK (auth.uid() = user_id);
+  WITH CHECK (true);
 
-CREATE POLICY "Users can update own bookings"
+CREATE POLICY "Anyone can update bookings"
   ON bookings FOR UPDATE
-  TO authenticated
-  USING (auth.uid() = user_id)
-  WITH CHECK (auth.uid() = user_id);
+  USING (true)
+  WITH CHECK (true);
 
-CREATE POLICY "Admins can view all bookings"
-  ON bookings FOR SELECT
-  TO authenticated
-  USING (
-    EXISTS (
-      SELECT 1 FROM profiles p WHERE p.id = auth.uid() AND p.role = 'admin'
-    )
-  );
-
--- Emergency Requests
 CREATE TABLE IF NOT EXISTS emergency_requests (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  user_id uuid REFERENCES profiles(id) ON DELETE SET NULL,
+  user_id text REFERENCES profiles(id) ON DELETE SET NULL,
   contact_name text NOT NULL,
   contact_phone text NOT NULL,
   latitude double precision,
@@ -188,42 +121,22 @@ CREATE TABLE IF NOT EXISTS emergency_requests (
 
 ALTER TABLE emergency_requests ENABLE ROW LEVEL SECURITY;
 
-CREATE POLICY "Users can view own emergency requests"
+CREATE POLICY "Anyone can view emergency requests"
   ON emergency_requests FOR SELECT
-  TO authenticated
-  USING (auth.uid() = user_id);
+  USING (true);
 
 CREATE POLICY "Anyone can insert emergency requests"
   ON emergency_requests FOR INSERT
   WITH CHECK (true);
 
-CREATE POLICY "Admins can view all emergency requests"
-  ON emergency_requests FOR SELECT
-  TO authenticated
-  USING (
-    EXISTS (
-      SELECT 1 FROM profiles p WHERE p.id = auth.uid() AND p.role = 'admin'
-    )
-  );
-
-CREATE POLICY "Admins can update emergency requests"
+CREATE POLICY "Anyone can update emergency requests"
   ON emergency_requests FOR UPDATE
-  TO authenticated
-  USING (
-    EXISTS (
-      SELECT 1 FROM profiles p WHERE p.id = auth.uid() AND p.role = 'admin'
-    )
-  )
-  WITH CHECK (
-    EXISTS (
-      SELECT 1 FROM profiles p WHERE p.id = auth.uid() AND p.role = 'admin'
-    )
-  );
+  USING (true)
+  WITH CHECK (true);
 
--- Station Managers (links managers to their stations)
 CREATE TABLE IF NOT EXISTS station_managers (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  manager_id uuid NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+  manager_id text NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
   station_id uuid NOT NULL REFERENCES stations(id) ON DELETE CASCADE,
   created_at timestamptz DEFAULT now(),
   UNIQUE(manager_id, station_id)
@@ -231,31 +144,15 @@ CREATE TABLE IF NOT EXISTS station_managers (
 
 ALTER TABLE station_managers ENABLE ROW LEVEL SECURITY;
 
-CREATE POLICY "Managers can view their own assignments"
+CREATE POLICY "Anyone can view station managers"
   ON station_managers FOR SELECT
-  TO authenticated
-  USING (manager_id = auth.uid());
+  USING (true);
 
-CREATE POLICY "Admins can manage station_managers"
+CREATE POLICY "Anyone can manage station managers"
   ON station_managers FOR ALL
-  TO authenticated
-  USING (
-    EXISTS (
-      SELECT 1 FROM profiles p WHERE p.id = auth.uid() AND p.role = 'admin'
-    )
-  );
+  USING (true)
+  WITH CHECK (true);
 
-CREATE POLICY "Managers can view bookings at their stations"
-  ON bookings FOR SELECT
-  TO authenticated
-  USING (
-    EXISTS (
-      SELECT 1 FROM station_managers sm
-      WHERE sm.manager_id = auth.uid() AND sm.station_id = bookings.station_id
-    )
-  );
-
--- RPC function for manager status updates (bypasses RLS via SECURITY DEFINER)
 CREATE OR REPLACE FUNCTION public.update_booking_status(
   p_booking_id uuid,
   p_new_status text
@@ -272,7 +169,6 @@ $$;
 GRANT EXECUTE ON FUNCTION public.update_booking_status TO anon;
 GRANT EXECUTE ON FUNCTION public.update_booking_status TO authenticated;
 
--- Indexes for performance
 CREATE INDEX IF NOT EXISTS idx_stations_city ON stations(city);
 CREATE INDEX IF NOT EXISTS idx_stations_lat_lng ON stations(latitude, longitude);
 CREATE INDEX IF NOT EXISTS idx_bookings_user_id ON bookings(user_id);

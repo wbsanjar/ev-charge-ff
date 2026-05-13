@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { ClerkProvider } from '@clerk/clerk-react';
 import { AuthProvider } from './context/AuthContext';
 import Navbar from './components/Navbar';
 import AuthModal from './components/AuthModal';
@@ -9,10 +10,13 @@ import StationDetailPage from './pages/StationDetailPage';
 import BookingPage from './pages/BookingPage';
 import DashboardPage from './pages/DashboardPage';
 import AdminPage from './pages/AdminPage';
+import ManagerDashboardPage from './pages/ManagerDashboardPage';
 import { Station } from './lib/supabase';
 import { AlertTriangle } from 'lucide-react';
 
-type Page = 'home' | 'map' | 'booking' | 'dashboard' | 'admin';
+const PUBLISHABLE_KEY = import.meta.env.VITE_CLERK_PUBLISHABLE_KEY;
+
+type Page = 'home' | 'map' | 'booking' | 'dashboard' | 'admin' | 'manager';
 
 function AppContent() {
   const [currentPage, setCurrentPage] = useState<Page>('home');
@@ -85,13 +89,13 @@ function AppContent() {
       {currentPage === 'booking' && (
         <BookingPage
           selectedStation={selectedStation}
-          onAuthClick={() => setShowAuth(true)}
           onBack={() => handleNavigate('map')}
         />
       )}
 
       {currentPage === 'dashboard' && <DashboardPage />}
       {currentPage === 'admin' && <AdminPage />}
+      {currentPage === 'manager' && <ManagerDashboardPage />}
 
       {showAuth && <AuthModal onClose={() => setShowAuth(false)} />}
       {showEmergency && <EmergencyModal onClose={() => setShowEmergency(false)} />}
@@ -101,8 +105,10 @@ function AppContent() {
 
 export default function App() {
   return (
-    <AuthProvider>
-      <AppContent />
-    </AuthProvider>
+    <ClerkProvider publishableKey={PUBLISHABLE_KEY}>
+      <AuthProvider>
+        <AppContent />
+      </AuthProvider>
+    </ClerkProvider>
   );
 }

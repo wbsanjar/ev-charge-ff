@@ -9,7 +9,7 @@ export type Profile = {
   id: string;
   full_name: string;
   phone: string;
-  role: 'user' | 'admin';
+  role: 'user' | 'admin' | 'manager';
   avatar_url: string;
   created_at: string;
 };
@@ -56,6 +56,13 @@ export type Booking = {
   vehicle_number: string;
   created_at: string;
   stations?: Station;
+};
+
+export type StationManager = {
+  id: string;
+  manager_id: string;
+  station_id: string;
+  created_at: string;
 };
 
 export type EmergencyRequest = {
