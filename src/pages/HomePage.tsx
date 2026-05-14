@@ -1,6 +1,7 @@
-import { useState, useEffect } from 'react';
-import { Search, MapPin, Zap, Clock, Shield, Star, ChevronRight, Battery, Navigation, AlertTriangle } from 'lucide-react';
+import { useState, useEffect, useRef } from 'react';
+import { Search, MapPin, Zap, Clock, Shield, Star, ChevronRight, Battery, Navigation, AlertTriangle, LocateFixed } from 'lucide-react';
 import { supabase, Station } from '../lib/supabase';
+import { calculateDistance, getCurrentPosition } from '../lib/location';
 
 type Page = 'home' | 'map' | 'booking' | 'dashboard' | 'admin';
 
@@ -51,6 +52,10 @@ export default function HomePage({ onNavigate, onEmergency, onStationSelect }: P
   const [filteredStations, setFilteredStations] = useState<Station[]>([]);
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [stationsLoading, setStationsLoading] = useState(true);
+  const [userLocation, setUserLocation] = useState<{ lat: number; lng: number } | null>(null);
+  const [locating, setLocating] = useState(false);
+  const [locationFound, setLocationFound] = useState(false);
+  const nearbyRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     supabase.from('stations').select('*').order('name').then(({ data }) => {
@@ -58,6 +63,21 @@ export default function HomePage({ onNavigate, onEmergency, onStationSelect }: P
       setStationsLoading(false);
     });
   }, []);
+
+  async function handleFindNearby() {
+    setLocating(true);
+    setLocationFound(false);
+    try {
+      const pos = await getCurrentPosition();
+      setUserLocation({ lat: pos.coords.latitude, lng: pos.coords.longitude });
+      setLocationFound(true);
+      setTimeout(() => setLocationFound(false), 3000);
+      setTimeout(() => nearbyRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 300);
+    } catch {
+      alert('Could not detect your location. Please allow location access in your browser settings and try again.');
+    }
+    setLocating(false);
+  }
 
   useEffect(() => {
     if (searchQuery.length > 1) {
@@ -174,6 +194,10 @@ export default function HomePage({ onNavigate, onEmergency, onStationSelect }: P
                 <AlertTriangle className="w-5 h-5 text-red-400" />
                 Emergency Help
               </button>
+              <button onClick={handleFindNearby} disabled={locating} className="flex items-center gap-2 px-6 py-3 bg-blue-500/20 border border-blue-400/40 text-white rounded-xl font-semibold hover:bg-blue-500/30 transition-all backdrop-blur-sm">
+                <LocateFixed className={`w-5 h-5 text-blue-400 ${locating ? 'animate-pulse' : ''} ${locationFound ? 'text-green-400' : ''}`} />
+                {locating ? 'Locating...' : locationFound ? 'Location Found!' : 'Find Chargers Near Me'}
+              </button>
             </div>
           </div>
         </div>
@@ -220,7 +244,62 @@ export default function HomePage({ onNavigate, onEmergency, onStationSelect }: P
         </div>
       </section>
 
-      {/* Nearby Stations Preview */}
+      {/* Nearby Stations */}
+      {userLocation && (
+        <section ref={nearbyRef} className="py-20 bg-gradient-to-b from-emerald-50 to-white">
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div className="flex items-center justify-between mb-10">
+              <div>
+                <h2 className="text-3xl font-black text-gray-900">Nearby Stations</h2>
+                <p className="text-gray-500 mt-1">Charging stations closest to your location</p>
+              </div>
+              <button onClick={() => onNavigate('map')} className="flex items-center gap-2 text-emerald-600 font-semibold hover:text-emerald-700 transition-colors">
+                View all <ChevronRight className="w-4 h-4" />
+              </button>
+            </div>
+            <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-6">
+              {stationsLoading ? (
+                Array.from({ length: 6 }).map((_, i) => (
+                  <div key={i} className="bg-white rounded-2xl overflow-hidden shadow-sm border border-gray-100 animate-pulse">
+                    <div className="h-40 bg-gray-200" />
+                    <div className="p-4 space-y-3">
+                      <div className="h-4 w-3/4 bg-gray-200 rounded" />
+                      <div className="h-3 w-1/2 bg-gray-200 rounded" />
+                      <div className="flex justify-between">
+                        <div className="h-4 w-20 bg-gray-200 rounded" />
+                        <div className="h-5 w-16 bg-gray-200 rounded-full" />
+                      </div>
+                    </div>
+                  </div>
+                ))
+              ) : stations.length === 0 ? (
+                <div className="col-span-full text-center py-12">
+                  <MapPin className="w-12 h-12 text-gray-300 mx-auto mb-3" />
+                  <p className="text-gray-500 font-medium">No stations available yet</p>
+                </div>
+              ) : (
+                [...stations]
+                  .sort((a, b) => {
+                    const dA = calculateDistance(userLocation.lat, userLocation.lng, a.latitude, a.longitude);
+                    const dB = calculateDistance(userLocation.lat, userLocation.lng, b.latitude, b.longitude);
+                    return dA - dB;
+                  })
+                  .slice(0, 6)
+                  .map(station => (
+                    <NearbyStationCard
+                      key={station.id}
+                      station={station}
+                      distance={calculateDistance(userLocation.lat, userLocation.lng, station.latitude, station.longitude)}
+                      onClick={() => onStationSelect(station)}
+                    />
+                  ))
+              )}
+            </div>
+          </div>
+        </section>
+      )}
+
+      {/* Popular Stations */}
       <section className="py-20 bg-white">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex items-center justify-between mb-10">
@@ -290,6 +369,43 @@ export default function HomePage({ onNavigate, onEmergency, onStationSelect }: P
           </div>
         </div>
       </footer>
+    </div>
+  );
+}
+
+function NearbyStationCard({ station, distance, onClick }: { station: Station; distance: number; onClick: () => void }) {
+  return (
+    <div onClick={onClick} className="bg-white rounded-2xl overflow-hidden shadow-sm hover:shadow-lg transition-all cursor-pointer border border-emerald-100 group relative">
+      <div className="relative h-40 overflow-hidden">
+        <img src={station.image_url || 'https://images.pexels.com/photos/110844/pexels-photo-110844.jpeg?auto=compress&cs=tinysrgb&w=800'} alt={station.name} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
+        <div className="absolute inset-0 bg-gradient-to-t from-black/40 to-transparent" />
+        {station.has_fast_charging && (
+          <div className="absolute top-3 left-3 flex items-center gap-1 bg-amber-400 text-amber-900 px-2 py-1 rounded-full text-xs font-bold">
+            <Zap className="w-3 h-3" /> Fast
+          </div>
+        )}
+        <div className="absolute top-3 right-3 bg-white/90 backdrop-blur-sm px-3 py-1 rounded-full text-xs font-bold text-blue-600 shadow-sm flex items-center gap-1">
+          <MapPin className="w-3 h-3" /> {distance} km
+        </div>
+        <div className={`absolute bottom-3 left-3 px-2 py-1 rounded-full text-xs font-medium ${station.available_slots > 0 ? 'bg-emerald-100/90 text-emerald-700' : 'bg-red-100/90 text-red-700'}`}>
+          {station.available_slots > 0 ? `${station.available_slots} available` : 'Full'}
+        </div>
+      </div>
+      <div className="p-4">
+        <h3 className="font-bold text-gray-900 text-base mb-1 line-clamp-1">{station.name}</h3>
+        <div className="flex items-center gap-1 text-gray-500 text-sm mb-3">
+          <MapPin className="w-3.5 h-3.5 flex-shrink-0" />
+          <span className="line-clamp-1">{station.address}, {station.city}</span>
+        </div>
+        <div className="flex items-center justify-between">
+          <span className="text-emerald-600 font-bold text-base">₹{station.price_per_unit}/unit</span>
+          <div className="flex flex-wrap gap-1">
+            {station.charger_types.slice(0, 2).map(t => (
+              <span key={t} className="text-xs bg-gray-100 text-gray-600 px-2 py-0.5 rounded-full">{t}</span>
+            ))}
+          </div>
+        </div>
+      </div>
     </div>
   );
 }

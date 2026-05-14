@@ -4,6 +4,9 @@ CREATE TABLE IF NOT EXISTS profiles (
   phone text DEFAULT '',
   role text DEFAULT 'user',
   avatar_url text DEFAULT '',
+  total_co2_saved numeric DEFAULT 0,
+  reward_points integer DEFAULT 0,
+  badges text[] DEFAULT '{}',
   created_at timestamptz DEFAULT now()
 );
 
@@ -153,6 +156,26 @@ CREATE POLICY "Anyone can manage station managers"
   USING (true)
   WITH CHECK (true);
 
+CREATE TABLE IF NOT EXISTS reward_transactions (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id text NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+  points integer NOT NULL,
+  type text NOT NULL DEFAULT 'earned',
+  reference_id text DEFAULT '',
+  description text DEFAULT '',
+  created_at timestamptz DEFAULT now()
+);
+
+ALTER TABLE reward_transactions ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "Anyone can view reward transactions"
+  ON reward_transactions FOR SELECT
+  USING (true);
+
+CREATE POLICY "Anyone can insert reward transactions"
+  ON reward_transactions FOR INSERT
+  WITH CHECK (true);
+
 CREATE OR REPLACE FUNCTION public.update_booking_status(
   p_booking_id uuid,
   p_new_status text
@@ -175,3 +198,4 @@ CREATE INDEX IF NOT EXISTS idx_bookings_user_id ON bookings(user_id);
 CREATE INDEX IF NOT EXISTS idx_bookings_station_id ON bookings(station_id);
 CREATE INDEX IF NOT EXISTS idx_bookings_date ON bookings(booking_date);
 CREATE INDEX IF NOT EXISTS idx_reviews_station_id ON station_reviews(station_id);
+CREATE INDEX IF NOT EXISTS idx_reward_tx_user_id ON reward_transactions(user_id);

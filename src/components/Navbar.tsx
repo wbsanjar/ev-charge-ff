@@ -1,8 +1,8 @@
 import { useState, useEffect } from 'react';
-import { Zap, Menu, X, User, LogOut, LayoutDashboard, Shield, Building2 } from 'lucide-react';
+import { Zap, Menu, X, User, LogOut, LayoutDashboard, Shield, Building2, Coins, Target } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 
-type Page = 'home' | 'map' | 'booking' | 'dashboard' | 'admin' | 'manager';
+type Page = 'home' | 'map' | 'booking' | 'dashboard' | 'missions' | 'admin' | 'manager';
 
 type Props = {
   currentPage: Page;
@@ -26,6 +26,7 @@ export default function Navbar({ currentPage, onNavigate, onAuthClick }: Props) 
     { label: 'Home', page: 'home' },
     { label: 'Find Stations', page: 'map' },
     { label: 'Book a Slot', page: 'booking' },
+    { label: 'Missions', page: 'missions' },
   ];
 
   return (
@@ -85,8 +86,17 @@ export default function Navbar({ currentPage, onNavigate, onAuthClick }: Props) 
                 </button>
                 {dropdownOpen && (
                   <div className="absolute right-0 top-full mt-1 w-48 bg-white rounded-xl shadow-lg border border-gray-100 overflow-hidden">
+                    <div className="flex items-center gap-2 px-4 py-2 text-xs text-amber-600 bg-amber-50 border-b border-amber-100">
+                      <Coins className="w-3.5 h-3.5" />
+                      <span className="font-semibold">{profile?.reward_points || 0} pts</span>
+                      <span className="text-amber-400">·</span>
+                      <span className="text-amber-500">Reward Wallet</span>
+                    </div>
                     <button onClick={() => { onNavigate('dashboard'); setDropdownOpen(false); }} className="flex items-center gap-3 w-full px-4 py-3 text-sm text-gray-700 hover:bg-gray-50">
                       <LayoutDashboard className="w-4 h-4 text-emerald-500" /> My Dashboard
+                    </button>
+                    <button onClick={() => { onNavigate('missions'); setDropdownOpen(false); }} className="flex items-center gap-3 w-full px-4 py-3 text-sm text-gray-700 hover:bg-gray-50">
+                      <Target className="w-4 h-4 text-purple-500" /> Missions
                     </button>
                     {(profile?.role === 'manager' || profile?.role === 'admin') && (
                       <button onClick={() => { onNavigate('manager'); setDropdownOpen(false); }} className="flex items-center gap-3 w-full px-4 py-3 text-sm text-gray-700 hover:bg-gray-50">

@@ -9,6 +9,7 @@ import MapPage from './pages/MapPage';
 import StationDetailPage from './pages/StationDetailPage';
 import BookingPage from './pages/BookingPage';
 import DashboardPage from './pages/DashboardPage';
+import MissionsPage from './pages/MissionsPage';
 import AdminPage from './pages/AdminPage';
 import ManagerDashboardPage from './pages/ManagerDashboardPage';
 import { Station } from './lib/supabase';
@@ -16,7 +17,7 @@ import { AlertTriangle } from 'lucide-react';
 
 const PUBLISHABLE_KEY = import.meta.env.VITE_CLERK_PUBLISHABLE_KEY;
 
-type Page = 'home' | 'map' | 'booking' | 'dashboard' | 'admin' | 'manager';
+type Page = 'home' | 'map' | 'booking' | 'dashboard' | 'missions' | 'admin' | 'manager';
 
 function AppContent() {
   const [currentPage, setCurrentPage] = useState<Page>('home');
@@ -94,6 +95,7 @@ function AppContent() {
       )}
 
       {currentPage === 'dashboard' && <DashboardPage />}
+      {currentPage === 'missions' && <MissionsPage />}
       {currentPage === 'admin' && <AdminPage />}
       {currentPage === 'manager' && <ManagerDashboardPage />}
 

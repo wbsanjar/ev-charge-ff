@@ -6,11 +6,16 @@ import {
   CheckCircle,
   MapPin,
   ArrowLeft,
+  Leaf,
+  Coins,
+  XCircle,
 } from 'lucide-react';
 
 import { supabase, Station, Booking } from '../lib/supabase';
 import { useAuth } from '../context/AuthContext';
 import BookingReceiptModal from '../components/BookingReceiptModal';
+import { calculateCO2, calculateRewardPoints, calculateBookingBonus, getEarnedBadges, pointsToRupees, REWARD_PERCENT, BOOKING_BONUS_PERCENT } from '../lib/gamification';
+import { getCancelInfo } from '../lib/penalty';
 
 type Props = {
   selectedStation: Station | null;
@@ -41,7 +46,7 @@ export default function BookingPage({
   selectedStation,
   onBack,
 }: Props) {
-  const { user } = useAuth();
+  const { user, refreshProfile } = useAuth();
   const [step, setStep] = useState(1);
   const [bookingDate, setBookingDate] = useState('');
   const [startTime, setStartTime] = useState('');
@@ -56,6 +61,10 @@ export default function BookingPage({
 
   const [showPopup, setShowPopup] = useState(false);
 
+  const [earnedCO2, setEarnedCO2] = useState(0);
+
+  const [cancelCount, setCancelCount] = useState(0);
+
   const today = new Date().toISOString().split('T')[0];
 
   const maxDate = new Date(Date.now() + 7 * 86400000)
@@ -67,6 +76,13 @@ export default function BookingPage({
       setChargerType(selectedStation.charger_types[0] || '');
     }
   }, [selectedStation]);
+
+  useEffect(() => {
+    if (!user) return;
+    supabase.from('bookings').select('status').eq('user_id', user.id).eq('status', 'cancelled').then(({ data }) => {
+      setCancelCount(data?.length || 0);
+    });
+  }, [user]);
 
   function getEndTime(start: string, dur: number) {
     const [hours, minutes] = start.split(':').map(Number);
@@ -129,6 +145,49 @@ export default function BookingPage({
       created_at: new Date().toISOString(),
     };
 
+    const co2Saved = calculateCO2(duration);
+    const ptsEarned = calculateRewardPoints(totalAmount);
+    const bookingBonus = calculateBookingBonus(totalAmount);
+    setEarnedCO2(co2Saved);
+
+    if (user) {
+      const { data: cur } = await supabase.from('profiles')
+        .select('total_co2_saved, reward_points, badges')
+        .eq('id', user.id)
+        .single();
+      const prevCO2 = (cur as { total_co2_saved?: number } | null)?.total_co2_saved || 0;
+      const prevPts = (cur as { reward_points?: number } | null)?.reward_points || 0;
+      const prevBadges = (cur as { badges?: string[] } | null)?.badges || [];
+      const newCO2 = prevCO2 + co2Saved;
+      const newPts = prevPts + ptsEarned + bookingBonus;
+      const newBadges = getEarnedBadges(newCO2);
+
+      await supabase.from('profiles').update({
+        total_co2_saved: newCO2,
+        reward_points: newPts,
+        badges: [...new Set([...prevBadges, ...newBadges])],
+      }).eq('id', user.id);
+
+      await Promise.all([
+        supabase.from('reward_transactions').insert({
+          user_id: user.id,
+          points: ptsEarned,
+          type: 'earned',
+          reference_id: inserted?.id || localBooking.id,
+          description: `Booking at ${selectedStation.name}`,
+        }),
+        supabase.from('reward_transactions').insert({
+          user_id: user.id,
+          points: bookingBonus,
+          type: 'bonus',
+          reference_id: inserted?.id || localBooking.id,
+          description: `5% booking bonus for ${selectedStation.name}`,
+        }),
+      ]);
+
+      await refreshProfile();
+    }
+
     setConfirmedBooking(localBooking);
     setShowPopup(true);
 
@@ -166,6 +225,42 @@ export default function BookingPage({
       </div>
     );
   }
+
+  const cancelWarnBanner = user && (() => {
+    const ci = getCancelInfo(cancelCount);
+    if (ci.warningLevel === 'blocked') {
+      return (
+        <div className="bg-red-50 border border-red-200 rounded-2xl p-6 text-center">
+          <XCircle className="w-12 h-12 text-red-400 mx-auto mb-3" />
+          <h3 className="text-lg font-bold text-red-700 mb-1">Booking Blocked</h3>
+          <p className="text-sm text-red-600">{ci.message}</p>
+        </div>
+      );
+    }
+    if (ci.warningLevel === 'final') {
+      return (
+        <div className="bg-orange-50 border border-orange-200 rounded-2xl p-4 mb-4 flex items-start gap-3">
+          <XCircle className="w-5 h-5 text-orange-500 flex-shrink-0 mt-0.5" />
+          <div>
+            <p className="text-sm font-bold text-orange-700">Final Warning</p>
+            <p className="text-xs text-orange-600 mt-0.5">{ci.message}</p>
+          </div>
+        </div>
+      );
+    }
+    if (ci.warningLevel === 'first') {
+      return (
+        <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4 mb-4 flex items-start gap-3">
+          <XCircle className="w-5 h-5 text-amber-500 flex-shrink-0 mt-0.5" />
+          <div>
+            <p className="text-sm font-bold text-amber-700">First Warning</p>
+            <p className="text-xs text-amber-600 mt-0.5">{ci.message}</p>
+          </div>
+        </div>
+      );
+    }
+    return null;
+  })();
 
   return (
     <>
@@ -269,8 +364,10 @@ export default function BookingPage({
             </div>
           )}
 
+          {cancelWarnBanner}
+
           {/* STEP 1 */}
-          {step === 1 && (
+          {step === 1 && getCancelInfo(cancelCount).canBook && (
             <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 space-y-5">
 
               <h3 className="text-lg font-bold text-gray-900 flex items-center gap-2">
@@ -351,7 +448,7 @@ export default function BookingPage({
           )}
 
           {/* STEP 2 */}
-          {step === 2 && (
+          {step === 2 && getCancelInfo(cancelCount).canBook && (
             <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 space-y-5">
 
               <h3 className="text-lg font-bold text-gray-900">
@@ -403,7 +500,7 @@ export default function BookingPage({
           )}
 
           {/* STEP 3 */}
-          {step === 3 && (
+          {step === 3 && getCancelInfo(cancelCount).canBook && (
             <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 space-y-5">
 
               <h2 className="text-2xl font-black">
@@ -435,6 +532,28 @@ export default function BookingPage({
                   <span className="font-bold text-emerald-600">
                     ₹{totalAmount.toFixed(0)}
                   </span>
+                </div>
+              </div>
+
+              <div className="bg-gradient-to-r from-amber-50 to-emerald-50 border border-amber-200 rounded-2xl p-4 space-y-2">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Coins className="w-5 h-5 text-amber-500" />
+                    <span className="text-sm font-semibold text-gray-700">Rewards You'll Earn</span>
+                  </div>
+                  <span className="text-emerald-600 font-black text-lg">+{calculateRewardPoints(totalAmount) + calculateBookingBonus(totalAmount)} pts</span>
+                </div>
+                <div className="flex items-center justify-between text-xs">
+                  <span className="text-gray-500">Booking points ({REWARD_PERCENT}% of amount)</span>
+                  <span className="text-emerald-600 font-medium">+{calculateRewardPoints(totalAmount)} pts</span>
+                </div>
+                <div className="flex items-center justify-between text-xs">
+                  <span className="text-gray-500">Booking bonus ({BOOKING_BONUS_PERCENT}% extra)</span>
+                  <span className="text-emerald-600 font-medium">+{calculateBookingBonus(totalAmount)} pts</span>
+                </div>
+                <div className="flex items-center justify-between text-xs border-t border-amber-200 pt-1.5">
+                  <span className="text-gray-500">Total value</span>
+                  <span className="text-emerald-600 font-medium">+₹{pointsToRupees(calculateRewardPoints(totalAmount) + calculateBookingBonus(totalAmount)).toFixed(1)}</span>
                 </div>
               </div>
 
@@ -554,6 +673,24 @@ export default function BookingPage({
                 <span className="font-bold text-emerald-600">
                   ₹{totalAmount.toFixed(0)}
                 </span>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-3 gap-2 mb-5">
+              <div className="bg-emerald-50 rounded-xl p-3 text-center">
+                <Leaf className="w-5 h-5 text-emerald-500 mx-auto mb-1" />
+                <div className="text-emerald-700 font-black text-sm">{earnedCO2.toFixed(1)} kg</div>
+                <div className="text-[10px] text-emerald-500">CO₂ Saved</div>
+              </div>
+              <div className="bg-amber-50 rounded-xl p-3 text-center">
+                <Coins className="w-5 h-5 text-amber-500 mx-auto mb-1" />
+                <div className="text-amber-700 font-black text-sm">+{calculateRewardPoints(totalAmount)}</div>
+                <div className="text-[10px] text-amber-500">Points</div>
+              </div>
+              <div className="bg-blue-50 rounded-xl p-3 text-center">
+                <Coins className="w-5 h-5 text-blue-500 mx-auto mb-1" />
+                <div className="text-blue-700 font-black text-sm">+{calculateBookingBonus(totalAmount)}</div>
+                <div className="text-[10px] text-blue-500">Bonus</div>
               </div>
             </div>
 

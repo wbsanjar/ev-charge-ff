@@ -1,40 +1,73 @@
-import { useState, useEffect } from 'react';
-import { Plus, Zap, Users, MapPin, Calendar, Shield, Edit2, ToggleLeft, ToggleRight, CheckCircle, XCircle, AlertTriangle, ChevronDown, ChevronUp } from 'lucide-react';
+import { useState, useEffect, useRef } from 'react';
+import { Plus, Zap, Users, MapPin, Calendar, Shield, Edit2, ToggleLeft, ToggleRight, CheckCircle, XCircle, AlertTriangle, ChevronDown, ChevronUp, Target, Crosshair } from 'lucide-react';
 import { supabase, Station, Booking, EmergencyRequest } from '../lib/supabase';
 import { useAuth } from '../context/AuthContext';
+import { DEFAULT_MISSIONS } from '../lib/gamification';
+import { getCurrentPosition } from '../lib/location';
+import { seedBhopalStations } from '../lib/seedStations';
 
 type BookingWithProfile = Booking & { profiles: { full_name: string; phone: string } };
 type EmergencyWithProfile = EmergencyRequest;
 
 export default function AdminPage() {
   const { profile } = useAuth();
-  const [tab, setTab] = useState<'overview' | 'stations' | 'bookings' | 'emergency'>('overview');
+  const [tab, setTab] = useState<'overview' | 'stations' | 'bookings' | 'emergency' | 'missions'>('overview');
   const [stations, setStations] = useState<Station[]>([]);
   const [bookings, setBookings] = useState<BookingWithProfile[]>([]);
   const [emergencies, setEmergencies] = useState<EmergencyWithProfile[]>([]);
   const [loading, setLoading] = useState(true);
   const [showAddStation, setShowAddStation] = useState(false);
+  const [seeding, setSeeding] = useState(false);
+  const [seedMsg, setSeedMsg] = useState<string | null>(null);
 
   useEffect(() => {
     fetchAll();
   }, []);
 
+  const seededRef = useRef(false);
+  useEffect(() => {
+    if (profile?.role === 'admin' && !loading && !seededRef.current) {
+      seededRef.current = true;
+      const hasBhopal = stations.some(s => s.city === 'Bhopal');
+      if (!hasBhopal) {
+        seedBhopalStations().then(r => {
+          if (r.count > 0) { setSeedMsg(`Auto-seeded ${r.count} Bhopal stations!`); fetchAll(); }
+          else if (r.error) { setSeedMsg(r.error); }
+        });
+      }
+    }
+  }, [profile, loading]);
+
   async function fetchAll() {
     setLoading(true);
-    const [s, b, e] = await Promise.all([
+    const results = await Promise.allSettled([
       supabase.from('stations').select('*').order('created_at', { ascending: false }),
       supabase.from('bookings').select('*, profiles(full_name, phone)').order('created_at', { ascending: false }).limit(50),
       supabase.from('emergency_requests').select('*').order('created_at', { ascending: false }),
     ]);
-    if (s.data) setStations(s.data);
-    if (b.data) setBookings(b.data as BookingWithProfile[]);
-    if (e.data) setEmergencies(e.data);
+    const [s, b, e] = results.map(r => r.status === 'fulfilled' ? r.value : { data: null, error: r.reason });
+    if (s.data) setStations(s.data); else if (s.error) console.error('fetch stations:', s.error);
+    if (b.data) setBookings(b.data as BookingWithProfile[]); else if (b.error) console.error('fetch bookings:', b.error);
+    if (e.data) setEmergencies(e.data); else if (e.error) console.error('fetch emergencies:', e.error);
     setLoading(false);
   }
 
   async function toggleStation(id: string, current: boolean) {
     await supabase.from('stations').update({ is_active: !current }).eq('id', id);
     setStations(prev => prev.map(s => s.id === id ? { ...s, is_active: !current } : s));
+  }
+
+  async function handleSeedBhopal() {
+    setSeeding(true);
+    setSeedMsg(null);
+    const result = await seedBhopalStations();
+    setSeeding(false);
+    if (result.error) {
+      setSeedMsg(`Error: ${result.error}`);
+    } else {
+      setSeedMsg(`Successfully added ${result.count} Bhopal stations!`);
+      fetchAll();
+    }
   }
 
   async function updateEmergencyStatus(id: string, status: string) {
@@ -61,6 +94,7 @@ export default function AdminPage() {
     { id: 'stations', label: `Stations (${stations.length})` },
     { id: 'bookings', label: `Bookings (${bookings.length})` },
     { id: 'emergency', label: `Emergency (${emergencies.filter(e => e.status === 'pending').length})` },
+    { id: 'missions', label: `Missions (${DEFAULT_MISSIONS.filter(m => m.isActive).length})` },
   ] as const;
 
   return (
@@ -158,6 +192,20 @@ export default function AdminPage() {
                 ))}
               </div>
             )}
+            {tab === 'missions' && (
+              <div className="space-y-3">
+                {[1, 2, 3].map(i => (
+                  <div key={i} className="bg-white rounded-2xl shadow-sm border border-gray-100 p-4 flex items-center gap-4">
+                    <div className="w-11 h-11 bg-gray-200 rounded-xl flex-shrink-0" />
+                    <div className="flex-1 space-y-2">
+                      <div className="h-4 w-36 bg-gray-200 rounded" />
+                      <div className="h-3 w-56 bg-gray-200 rounded" />
+                    </div>
+                    <div className="h-7 w-16 bg-gray-200 rounded" />
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         ) : (
           <>
@@ -178,6 +226,26 @@ export default function AdminPage() {
                     <div className="text-gray-500 text-sm mt-0.5">{label}</div>
                   </div>
                 ))}
+
+                {/* Seed Bhopal Stations */}
+                <div className="sm:col-span-2 lg:col-span-4 bg-blue-50 border border-blue-200 rounded-2xl p-5">
+                  <h3 className="font-bold text-blue-700 flex items-center gap-2 mb-3">
+                    <MapPin className="w-5 h-5" />
+                    Station Management
+                  </h3>
+                  <p className="text-blue-600 text-sm mb-3">Add 10 pre-configured EV charging stations for Bhopal city with a single click.</p>
+                  <div className="flex items-center gap-3">
+                    <button onClick={handleSeedBhopal} disabled={seeding} className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-xl text-sm font-semibold hover:bg-blue-700 disabled:opacity-60 transition-colors">
+                      <Plus className="w-4 h-4" />
+                      {seeding ? 'Adding...' : 'Seed Bhopal Stations'}
+                    </button>
+                    {seedMsg && (
+                      <span className={`text-sm font-medium ${seedMsg.startsWith('Error') ? 'text-red-600' : 'text-emerald-600'}`}>
+                        {seedMsg}
+                      </span>
+                    )}
+                  </div>
+                </div>
 
                 {/* Recent Emergencies */}
                 {emergencies.filter(e => e.status === 'pending').length > 0 && (
@@ -312,6 +380,37 @@ export default function AdminPage() {
                 ))}
               </div>
             )}
+
+            {/* Missions */}
+            {tab === 'missions' && (
+              <div>
+                <div className="flex items-center justify-between mb-4">
+                  <h3 className="font-bold text-gray-900">Missions</h3>
+                  <span className="text-xs text-gray-400">Defined in code</span>
+                </div>
+                <div className="space-y-3">
+                  {DEFAULT_MISSIONS.map(m => (
+                    <div key={m.id} className="bg-white rounded-2xl shadow-sm border border-gray-100 p-4">
+                      <div className="flex items-center gap-4">
+                        <div className="w-11 h-11 rounded-xl flex items-center justify-center flex-shrink-0 bg-purple-100">
+                          <Target className="w-5 h-5 text-purple-600" />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <h4 className="font-bold text-gray-900 text-sm">{m.title}</h4>
+                          <p className="text-gray-500 text-xs mt-0.5">{m.description}</p>
+                          <div className="flex items-center gap-3 mt-1.5">
+                            <span className="text-xs bg-gray-100 px-2 py-0.5 rounded-full">{m.type.replace(/_/g, ' ')}</span>
+                            <span className="text-xs bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full font-semibold">{m.requirement} req</span>
+                            <span className="text-xs bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded-full font-semibold">+{m.rewardPoints} pts</span>
+                          </div>
+                        </div>
+                        <span className="text-xs text-emerald-600 font-medium bg-emerald-50 px-2.5 py-1 rounded-full">Active</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </>
         )}
       </div>
@@ -328,6 +427,22 @@ function AddStationForm({ onAdd, onCancel }: { onAdd: () => void; onCancel: () =
   });
   const [saving, setSaving] = useState(false);
   const [expanded, setExpanded] = useState(true);
+  const [locating, setLocating] = useState(false);
+
+  async function detectLocation() {
+    setLocating(true);
+    try {
+      const pos = await getCurrentPosition();
+      setData(d => ({
+        ...d,
+        latitude: pos.coords.latitude.toFixed(6),
+        longitude: pos.coords.longitude.toFixed(6),
+      }));
+    } catch {
+      alert('Could not detect location. Please check location permissions and try again.');
+    }
+    setLocating(false);
+  }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -363,8 +478,48 @@ function AddStationForm({ onAdd, onCancel }: { onAdd: () => void; onCancel: () =
             { key: 'address', label: 'Address', placeholder: 'Street address', col: '2' },
             { key: 'city', label: 'City', placeholder: 'e.g. Bangalore', col: '1' },
             { key: 'price_per_unit', label: 'Price/unit (₹)', placeholder: '12.50', col: '1' },
-            { key: 'latitude', label: 'Latitude', placeholder: '28.6315', col: '1' },
-            { key: 'longitude', label: 'Longitude', placeholder: '77.2167', col: '1' },
+          ].map(({ key, label, placeholder, col }) => (
+            <div key={key} className={col === '2' ? 'col-span-2' : ''}>
+              <label className="block text-xs font-semibold text-emerald-700 mb-1">{label}</label>
+              <input
+                value={data[key as keyof typeof data] as string}
+                onChange={e => setData(d => ({ ...d, [key]: e.target.value }))}
+                placeholder={placeholder}
+                className="w-full px-3 py-2 border border-emerald-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-emerald-400 bg-white"
+              />
+            </div>
+          ))}
+          {/* Latitude / Longitude with detect button */}
+          <div className="col-span-1">
+            <label className="block text-xs font-semibold text-emerald-700 mb-1">Latitude</label>
+            <input
+              value={data.latitude}
+              onChange={e => setData(d => ({ ...d, latitude: e.target.value }))}
+              placeholder="28.6315"
+              className="w-full px-3 py-2 border border-emerald-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-emerald-400 bg-white"
+            />
+          </div>
+          <div className="col-span-1">
+            <label className="block text-xs font-semibold text-emerald-700 mb-1">Longitude</label>
+            <div className="flex gap-2">
+              <input
+                value={data.longitude}
+                onChange={e => setData(d => ({ ...d, longitude: e.target.value }))}
+                placeholder="77.2167"
+                className="flex-1 px-3 py-2 border border-emerald-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-emerald-400 bg-white"
+              />
+              <button
+                type="button"
+                onClick={detectLocation}
+                disabled={locating}
+                className="flex items-center gap-1.5 px-3 py-2 bg-blue-50 border border-blue-200 text-blue-600 rounded-xl text-xs font-medium hover:bg-blue-100 transition-colors whitespace-nowrap disabled:opacity-60"
+              >
+                <Crosshair className={`w-3.5 h-3.5 ${locating ? 'animate-pulse' : ''}`} />
+                {locating ? 'Detecting...' : 'Detect'}
+              </button>
+            </div>
+          </div>
+          {[
             { key: 'total_slots', label: 'Total Slots', placeholder: '4', col: '1' },
             { key: 'available_slots', label: 'Available Slots', placeholder: '4', col: '1' },
             { key: 'charger_types', label: 'Charger Types (comma-separated)', placeholder: 'CCS2,Type 2', col: '2' },

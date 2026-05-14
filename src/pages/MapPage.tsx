@@ -1,13 +1,13 @@
-import { useState, useEffect, useRef } from 'react';
-import { Search, Filter, MapPin, Zap, X, Navigation, Star, ChevronRight, SlidersHorizontal } from 'lucide-react';
+import { useState, useEffect, useRef, useMemo } from 'react';
+import { Search, Filter, MapPin, Zap, X, Navigation, Star, ChevronRight, SlidersHorizontal, LocateFixed } from 'lucide-react';
 import { supabase, Station } from '../lib/supabase';
+import { calculateDistance, getCurrentPosition } from '../lib/location';
 
 type Props = {
   onStationSelect: (station: Station) => void;
   initialStation?: Station | null;
 };
 
-const CITIES = ['All Cities', 'New Delhi', 'Mumbai', 'Bangalore', 'Chennai', 'Noida', 'Hyderabad', 'Kolkata', 'Pune'];
 const CHARGER_TYPES = ['All Types', 'CCS2', 'Type 2', 'CHAdeMO', 'GB/T'];
 const RATING_OPTIONS = ['All Ratings', '5', '4+', '3+', '2+', '1+'];
 
@@ -28,6 +28,16 @@ export default function MapPage({ onStationSelect, initialStation }: Props) {
   const [showFilters, setShowFilters] = useState(false);
   const [mapLoaded, setMapLoaded] = useState(false);
   const [stationsLoading, setStationsLoading] = useState(true);
+  const cityOptions = useMemo(() => {
+    const cities = ['All Cities', ...new Set(stations.map(s => s.city))];
+    return cities.sort();
+  }, [stations]);
+
+  const [userLocation, setUserLocation] = useState<{ lat: number; lng: number } | null>(null);
+  const [locating, setLocating] = useState(false);
+  const [sortByDistance, setSortByDistance] = useState(false);
+  const leafletRef = useRef<unknown>(null);
+  const userMarkerRef = useRef<unknown>(null);
 
   useEffect(() => {
     (async () => {
@@ -66,8 +76,17 @@ export default function MapPage({ onStationSelect, initialStation }: Props) {
       const minRating = parseInt(selectedRating);
       result = result.filter(s => (stationRatings[s.id] || 0) >= minRating);
     }
+
+    if (sortByDistance && userLocation) {
+      result = [...result].sort((a, b) => {
+        const dA = calculateDistance(userLocation.lat, userLocation.lng, a.latitude, a.longitude);
+        const dB = calculateDistance(userLocation.lat, userLocation.lng, b.latitude, b.longitude);
+        return dA - dB;
+      });
+    }
+
     setFiltered(result);
-  }, [searchQuery, selectedCity, selectedCharger, fastOnly, selectedRating, stationRatings, stations]);
+  }, [searchQuery, selectedCity, selectedCharger, fastOnly, selectedRating, stationRatings, stations, sortByDistance, userLocation]);
 
   useEffect(() => {
     if (!mapRef.current || mapLoaded) return;
@@ -85,6 +104,7 @@ export default function MapPage({ onStationSelect, initialStation }: Props) {
       }).addTo(map);
       L.control.zoom({ position: 'topright' }).addTo(map);
 
+      leafletRef.current = L;
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       (mapInstanceRef as any).current = map;
       setMapLoaded(true);
@@ -140,6 +160,53 @@ export default function MapPage({ onStationSelect, initialStation }: Props) {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [filtered, mapLoaded, selectedStation?.id]);
 
+  useEffect(() => {
+    if (!mapLoaded || !mapInstanceRef.current || !leafletRef.current) return;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const L = (leafletRef as any).current;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const map = mapInstanceRef.current as any;
+
+    if (userMarkerRef.current) {
+      (userMarkerRef.current as { remove: () => void }).remove();
+      userMarkerRef.current = null;
+    }
+
+    if (!userLocation) return;
+
+    const pulseIcon = L.divIcon({
+      className: '',
+      html: `<div style="
+        width:22px;height:22px;
+        background:#3b82f6;
+        border:3px solid white;
+        border-radius:50%;
+        box-shadow:0 0 0 4px rgba(59,130,246,0.3), 0 0 12px rgba(59,130,246,0.4);
+      "></div>`,
+      iconSize: [22, 22],
+      iconAnchor: [11, 11],
+    });
+
+    const marker = L.marker([userLocation.lat, userLocation.lng], { icon: pulseIcon, zIndexOffset: 1000 }).addTo(map);
+    userMarkerRef.current = marker;
+  }, [userLocation, mapLoaded]);
+
+  async function locateUser() {
+    setLocating(true);
+    try {
+      const pos = await getCurrentPosition();
+      const loc = { lat: pos.coords.latitude, lng: pos.coords.longitude };
+      setUserLocation(loc);
+      setSortByDistance(true);
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const map = mapInstanceRef.current as any;
+      if (map) map.setView([loc.lat, loc.lng], 12, { animate: true });
+    } catch {
+      alert('Could not detect your location. Please allow location access in your browser settings and try again.');
+    }
+    setLocating(false);
+  }
+
   return (
     <div className="flex h-screen pt-16 bg-gray-100">
       {/* Sidebar */}
@@ -160,8 +227,17 @@ export default function MapPage({ onStationSelect, initialStation }: Props) {
             <button onClick={() => setShowFilters(!showFilters)} className={`flex items-center gap-2 px-3 py-2 rounded-xl text-sm font-medium border transition-colors ${showFilters ? 'bg-emerald-50 border-emerald-200 text-emerald-700' : 'border-gray-200 text-gray-600 hover:border-gray-300'}`}>
               <SlidersHorizontal className="w-4 h-4" /> Filters
             </button>
+            {userLocation && (
+              <button onClick={() => setSortByDistance(d => !d)} className={`flex items-center gap-2 px-3 py-2 rounded-xl text-sm font-medium border transition-colors ${sortByDistance ? 'bg-blue-50 border-blue-200 text-blue-700' : 'border-gray-200 text-gray-600 hover:border-gray-300'}`}>
+                <MapPin className="w-4 h-4" /> Nearest
+              </button>
+            )}
             <button onClick={() => setFastOnly(!fastOnly)} className={`flex items-center gap-2 px-3 py-2 rounded-xl text-sm font-medium border transition-colors ${fastOnly ? 'bg-amber-50 border-amber-200 text-amber-700' : 'border-gray-200 text-gray-600 hover:border-gray-300'}`}>
               <Zap className="w-4 h-4" /> Fast Only
+            </button>
+            <button onClick={locateUser} disabled={locating} className="flex items-center gap-2 px-3 py-2 rounded-xl text-sm font-medium border border-gray-200 text-gray-600 hover:border-gray-300 transition-colors disabled:opacity-60">
+              <LocateFixed className={`w-4 h-4 ${locating ? 'animate-pulse' : ''}`} />
+              {locating ? 'Locating...' : 'Near Me'}
             </button>
             <span className="ml-auto text-xs text-gray-400 flex items-center">{filtered.length} found</span>
           </div>
@@ -170,7 +246,7 @@ export default function MapPage({ onStationSelect, initialStation }: Props) {
             <div className="mt-3 space-y-2">
               <div className="grid grid-cols-2 gap-2">
                 <select value={selectedCity} onChange={e => setSelectedCity(e.target.value)} className="px-3 py-2 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500">
-                  {CITIES.map(c => <option key={c}>{c}</option>)}
+                  {cityOptions.map(c => <option key={c}>{c}</option>)}
                 </select>
                 <select value={selectedCharger} onChange={e => setSelectedCharger(e.target.value)} className="px-3 py-2 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500">
                   {CHARGER_TYPES.map(c => <option key={c}>{c}</option>)}
@@ -246,6 +322,11 @@ export default function MapPage({ onStationSelect, initialStation }: Props) {
                       {stationRatings[station.id] && (
                         <span className="flex items-center gap-0.5 text-xs text-amber-600 font-medium">
                           <Star className="w-3 h-3 fill-amber-400" /> {stationRatings[station.id]}
+                        </span>
+                      )}
+                      {userLocation && (
+                        <span className="text-xs text-gray-400">
+                          {calculateDistance(userLocation.lat, userLocation.lng, station.latitude, station.longitude)} km
                         </span>
                       )}
                     </div>

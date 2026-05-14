@@ -11,6 +11,9 @@ export type Profile = {
   phone: string;
   role: 'user' | 'admin' | 'manager';
   avatar_url: string;
+  total_co2_saved: number;
+  reward_points: number;
+  badges: string[];
   created_at: string;
 };
 
@@ -62,6 +65,16 @@ export type StationManager = {
   id: string;
   manager_id: string;
   station_id: string;
+  created_at: string;
+};
+
+export type RewardTransaction = {
+  id: string;
+  user_id: string;
+  points: number;
+  type: 'earned' | 'redeemed' | 'bonus';
+  reference_id: string;
+  description: string;
   created_at: string;
 };
 
